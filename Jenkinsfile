@@ -1,23 +1,53 @@
 pipeline {
-    agent any
+    agent {
+        kubernetes {
+            inheritFrom 'jenkins-kaniko-agent'
+        }
+    }
+
+    environment {
+        IMAGE_NAME = "docker.io/shreeshail050/trivy-demo"
+        IMAGE_TAG  = "1.0"
+    }
 
     stages {
+
         stage('Checkout Code') {
             steps {
                 checkout scm
             }
         }
 
-        stage('Build Docker Image') {
+        stage('Build & Push Image using Kaniko') {
             steps {
-                sh 'docker build -t trivy-demo:1.0 .'
+                container('kaniko') {
+                    sh '''
+                      echo "=== KANIKO BUILD STARTED ==="
+
+                      /kaniko/executor \
+                        --context /workspace \
+                        --dockerfile Dockerfile \
+                        --destination ${IMAGE_NAME}:${IMAGE_TAG} \
+                        --destination ${IMAGE_NAME}:latest \
+                        --verbosity=info
+
+                      echo "=== KANIKO BUILD COMPLETED ==="
+                    '''
+                }
             }
         }
 
         stage('Trivy Image Scan') {
             steps {
                 sh '''
-                  trivy image                     --exit-code 1                     --severity CRITICAL                     trivy-demo:1.0
+                  echo "=== TRIVY IMAGE SCAN STARTED ==="
+
+                  trivy image \
+                    --exit-code 1 \
+                    --severity CRITICAL \
+                    ${IMAGE_NAME}:${IMAGE_TAG}
+
+                  echo "=== TRIVY IMAGE SCAN COMPLETED ==="
                 '''
             }
         }
@@ -25,10 +55,10 @@ pipeline {
 
     post {
         success {
-            echo '✅ Build passed. No critical vulnerabilities found.'
+            echo '✅ Pipeline succeeded. Image built and scanned successfully.'
         }
         failure {
-            echo '❌ Build failed due to critical vulnerabilities.'
+            echo '❌ Pipeline failed due to critical vulnerabilities or build issues.'
         }
     }
 }
